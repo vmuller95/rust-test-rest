@@ -1,8 +1,8 @@
 extern crate serde_qs as qs;
 extern crate base64;
 extern crate crypto;
-extern crate percent_encoding;
 extern crate reqwest;
+extern crate serde_json;
 
 use actix_web::*;
 use actix_web::http::{StatusCode};
@@ -15,7 +15,6 @@ use crypto::digest::Digest;
 use crypto::sha3::Sha3;
 use std::io::prelude::*;
 use std::fs::File;
-use percent_encoding::percent_decode;
 use actix_web::client::Client;
 
 
@@ -26,6 +25,14 @@ pub struct FormData {
     params: Vec<String>,
     upload_types: Vec<String>
 }
+
+#[derive(Deserialize)]
+pub struct JsonReq {
+    upload_type: String,
+    param: String
+}
+
+
 
 fn write_to_fle(fname: &str, data: &[u8]) {
     let mut pos = 0;
@@ -49,14 +56,10 @@ fn get_hash(bytes: &[u8]) -> String{
 }
 
 fn handle_base64(base64_image: &str) -> StatusCode {
-    let decode_result = percent_decode(base64_image.as_bytes()).decode_utf8();
-    let base64_decoded = match decode_result {
-        Ok(decoded) => decoded,
-        Err(_) => return StatusCode::BAD_REQUEST
-    };
     
     
-    let image_data = match decode(&base64_decoded[..]) {
+    
+    let image_data = match decode(&base64_image[..]) {
         Ok(bytes) => bytes,
         Err(_) => return StatusCode::BAD_REQUEST
     };
@@ -131,11 +134,34 @@ async fn handle_form_urlencoded(bytes: Bytes) -> StatusCode {
     StatusCode::OK
 }
 
+async fn handle_json(bytes: Bytes) -> StatusCode {
+    let v_res: serde_json::Result<Vec<JsonReq>> = serde_json::from_slice(&bytes);
+    let v = match v_res {
+        Ok(v_ok) => v_ok,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR
+    };
+    
+    for req in v.iter() {
+        let code = match &(req.upload_type[..]) {
+            "base64" => handle_base64(&req.param),
+            "uri" => handle_uri(&req.param).await,
+            _ => StatusCode::BAD_REQUEST
+        };
+        
+        if code != StatusCode::OK {
+            return code;
+        }
+    }
+    
+    StatusCode::OK
+}
+
 pub async fn load_image(bytes: Bytes, mut _payload: Multipart, req: HttpRequest) -> HttpResponse {    
-   println!("{}", req.content_type());
+    println!("{}", req.content_type());
     
     let code = match req.content_type() {
         "application/x-www-form-urlencoded" => handle_form_urlencoded(bytes).await,
+        "application/json" => handle_json(bytes).await,
         _ => StatusCode::NOT_FOUND
     };
     
