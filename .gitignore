@@ -2,3 +2,7 @@ target/
 images/
 previews/
 Cargo.lock
+skia
+previews-generator/*.a
+previews-generator/include/
+previews-generator/previews-generator
