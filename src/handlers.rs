@@ -3,6 +3,7 @@ extern crate base64;
 extern crate crypto;
 extern crate reqwest;
 extern crate serde_json;
+extern crate sanitize_filename;
 
 use actix_web::*;
 use actix_web::http::{StatusCode};
@@ -16,6 +17,7 @@ use crypto::sha3::Sha3;
 use std::io::prelude::*;
 use std::fs::File;
 use actix_web::client::Client;
+use futures::{StreamExt, TryStreamExt};
 
 
 
@@ -156,7 +158,28 @@ async fn handle_json(bytes: Bytes) -> StatusCode {
     StatusCode::OK
 }
 
-pub async fn load_image(bytes: Bytes, mut _payload: Multipart, req: HttpRequest) -> HttpResponse {    
+async fn handle_multipart(payload: &mut Multipart) -> StatusCode {
+    /* while let Ok(Some(mut field)) = payload.try_next().await {
+        let content_type = field.content_disposition().unwrap();
+        println!("content {}", content_type);
+    }*/
+    
+    
+        
+   /* while let Ok(Some(mut field)) = payload.try_next().await {
+        let _content_type = field.content_disposition().unwrap();
+        println!("asdasd");
+    }*/
+    /*let _stream = payload.map(|content| {
+        println!("Uploaded Content: {:?}", content);
+    });*/
+    
+    StatusCode::OK
+}
+
+pub async fn load_image_url(bytes: Bytes, req: HttpRequest) -> HttpResponse { 
+    println!("URL!");
+    println!("bytes size {}", bytes.to_vec().len());   
     println!("{}", req.content_type());
     
     let code = match req.content_type() {
@@ -166,4 +189,43 @@ pub async fn load_image(bytes: Bytes, mut _payload: Multipart, req: HttpRequest)
     };
     
     HttpResponse::build(code).finish()
+}
+
+pub async fn load_image_json(bytes: Bytes, req: HttpRequest) -> HttpResponse { 
+    println!("JSON!");
+    println!("bytes size {}", bytes.to_vec().len());   
+    println!("{}", req.content_type());
+    
+    let code = match req.content_type() {
+        "application/x-www-form-urlencoded" => handle_form_urlencoded(bytes).await,
+        "application/json" => handle_json(bytes).await,
+        _ => StatusCode::NOT_FOUND
+    };
+    
+    HttpResponse::build(code).finish()
+}
+
+
+pub async fn load_image_mp(mut payload: Multipart,  req: HttpRequest) -> HttpResponse {   
+     while let Ok(Some(mut field)) = payload.try_next().await {
+        let content_type = field.content_disposition().unwrap();
+        let filename = content_type.get_filename().unwrap();
+        let filepath = format!("./images/{}", sanitize_filename::sanitize(&filename));
+        // File::create is blocking operation, use threadpool
+        let mut f = web::block(|| std::fs::File::create(filepath))
+            .await
+            .unwrap();
+        // Field in turn is stream of *Bytes* object
+        while let Some(chunk) = field.next().await {
+            let data = chunk.unwrap();
+            // filesystem operations are blocking, we have to use threadpool
+           // let fr = web::block(move || f.write_all(&data).map(|_| f)).await
+            f = match web::block(move || f.write_all(&data).map(|_| f)).await {
+                Ok(f_ok) => f_ok,
+                Err(_) => return HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR).finish()
+            }
+        }
+    }
+    
+    HttpResponse::build(StatusCode::OK).finish()
 }
