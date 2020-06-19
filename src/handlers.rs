@@ -18,8 +18,23 @@ use std::io::prelude::*;
 use std::fs::File;
 use actix_web::client::Client;
 use futures::{StreamExt, TryStreamExt};
+use std::ffi::CString;
+use std::os::raw::c_char;
 
 
+extern {
+    fn GeneratePreview(inpath: *const c_char, outdir: *const c_char, name: *const c_char);
+}
+
+fn generate_preview(inpath: &str, outdir: &str, name: &str) {
+    unsafe {
+        let c_inpath = CString::new(inpath).expect("CString::new failed");
+        let c_outdir = CString::new(outdir).expect("CString::new failed");
+        let c_name = CString::new(name).expect("CString::new failed");
+        
+        GeneratePreview(c_inpath.as_ptr(), c_outdir.as_ptr(), c_name.as_ptr());
+    }
+}
 
 
 #[derive(Deserialize)]
@@ -36,7 +51,7 @@ pub struct JsonReq {
 
 
 
-fn write_to_fle(fname: &str, data: &[u8]) {
+fn write_to_file(fname: &str, data: &[u8]) {
     let mut pos = 0;
     let mut buffer = File::create(fname).unwrap();
 
@@ -58,9 +73,6 @@ fn get_hash(bytes: &[u8]) -> String{
 }
 
 fn handle_base64(base64_image: &str) -> StatusCode {
-    
-    
-    
     let image_data = match decode(&base64_image[..]) {
         Ok(bytes) => bytes,
         Err(_) => return StatusCode::BAD_REQUEST
@@ -68,11 +80,12 @@ fn handle_base64(base64_image: &str) -> StatusCode {
     
     let hex = get_hash(&image_data);
     
-    write_to_fle(&format!("images/{}", hex), &image_data);
+    write_to_file(&format!("images/{}", hex), &image_data);
     
+    let filepath = format!("./images/{}", hex);
+    generate_preview(&filepath, "previews/", &hex);
     
     StatusCode::OK
-
 }
 
 async fn  handle_uri(uri_str: &str) -> StatusCode {
@@ -100,9 +113,10 @@ async fn  handle_uri(uri_str: &str) -> StatusCode {
     
     //let body_vec = body.to_vec();
     let hex = get_hash(&body);
-    println!("HEX: {:?}", hex);
+    write_to_file(&format!("images/{}", hex), &body);
     
-    write_to_fle(&format!("images/{}", hex), &body);
+    let filepath = format!("./images/{}", hex);
+    generate_preview(&filepath, "previews/", &hex);
 
     StatusCode::OK
 }
@@ -121,7 +135,6 @@ async fn handle_form_urlencoded(bytes: Bytes) -> StatusCode {
     }
     
     for i in 0 .. form.params.len() {
-        println!("form.params[{}]={}", i, form.params[i]);
         let code = match &(form.upload_types[i][..]) {
             "base64" => handle_base64(&form.params[i]),
             "uri" => handle_uri(&form.params[i]).await,
@@ -158,50 +171,13 @@ async fn handle_json(bytes: Bytes) -> StatusCode {
     StatusCode::OK
 }
 
-async fn handle_multipart(payload: &mut Multipart) -> StatusCode {
-    /* while let Ok(Some(mut field)) = payload.try_next().await {
-        let content_type = field.content_disposition().unwrap();
-        println!("content {}", content_type);
-    }*/
-    
-    
-        
-   /* while let Ok(Some(mut field)) = payload.try_next().await {
-        let _content_type = field.content_disposition().unwrap();
-        println!("asdasd");
-    }*/
-    /*let _stream = payload.map(|content| {
-        println!("Uploaded Content: {:?}", content);
-    });*/
-    
-    StatusCode::OK
-}
-
 pub async fn load_image_url(bytes: Bytes, req: HttpRequest) -> HttpResponse { 
-    println!("URL!");
-    println!("bytes size {}", bytes.to_vec().len());   
-    println!("{}", req.content_type());
-    
-    let code = match req.content_type() {
-        "application/x-www-form-urlencoded" => handle_form_urlencoded(bytes).await,
-        "application/json" => handle_json(bytes).await,
-        _ => StatusCode::NOT_FOUND
-    };
-    
+    let code = handle_form_urlencoded(bytes).await;
     HttpResponse::build(code).finish()
 }
 
 pub async fn load_image_json(bytes: Bytes, req: HttpRequest) -> HttpResponse { 
-    println!("JSON!");
-    println!("bytes size {}", bytes.to_vec().len());   
-    println!("{}", req.content_type());
-    
-    let code = match req.content_type() {
-        "application/x-www-form-urlencoded" => handle_form_urlencoded(bytes).await,
-        "application/json" => handle_json(bytes).await,
-        _ => StatusCode::NOT_FOUND
-    };
-    
+    let code = handle_json(bytes).await;
     HttpResponse::build(code).finish()
 }
 
@@ -225,6 +201,9 @@ pub async fn load_image_mp(mut payload: Multipart,  req: HttpRequest) -> HttpRes
                 Err(_) => return HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR).finish()
             }
         }
+        
+        let filepath2 = format!("./images/{}", sanitize_filename::sanitize(&filename));
+        generate_preview(&filepath2, "previews/", filename);
     }
     
     HttpResponse::build(StatusCode::OK).finish()

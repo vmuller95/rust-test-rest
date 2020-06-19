@@ -4,5 +4,6 @@ previews/
 Cargo.lock
 skia
 previews-generator/*.a
+previews-generator/*.o
 previews-generator/include/
 previews-generator/previews-generator

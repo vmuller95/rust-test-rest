@@ -1,1 +1,3 @@
-rust-test-rest
+для сборки выполнить команды
+./install-deps.sh
+cargo build

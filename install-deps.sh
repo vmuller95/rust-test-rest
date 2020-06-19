@@ -9,3 +9,5 @@ bin/gn gen out/clang --args='cc="clang" cxx="clang++" is_official_build=true ski
 ninja -C out/clang
 cp -r include/ ../previews-generator/
 cp out/clang/libskia.a ../previews-generator/
+cd ../previews-generator
+make lib

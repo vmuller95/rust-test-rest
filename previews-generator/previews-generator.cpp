@@ -8,7 +8,7 @@
 
 using namespace std;
 
-sk_sp<SkImage>
+static sk_sp<SkImage>
 DecodeImage(vector<unsigned char> &data)
 {
 	unsigned char *imgBuffer = new unsigned char[data.size()];
@@ -20,7 +20,7 @@ DecodeImage(vector<unsigned char> &data)
 	return SkImage::MakeFromEncoded(previewData);
 }
 
-vector<unsigned char>
+static vector<unsigned char>
 ReadFile(const char *path)
 {
     ifstream fs(path, std::ios::binary);
@@ -73,9 +73,11 @@ extern "C" void GeneratePreview(const char *inpath,  const char *outdir, const c
 		fs.close();
 }
 
+#ifdef MAIN
 int 
 main()
 {
     GeneratePreview("images/test1.jpg", "previews/", "test-check.jpg");
     return 0;
 }
+#endif
